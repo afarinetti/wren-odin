@@ -8,8 +8,8 @@ TestExpectations :: struct {
 	runtime_error_msg:  string,
 	has_compile_error:  bool,
 	compile_error_line: int,
+	is_nontest:         bool, // File marked with "// nontest" - skip it
 }
-
 parse_expectations :: proc(content: string) -> TestExpectations {
 	expectations: TestExpectations
 
@@ -17,6 +17,12 @@ parse_expectations :: proc(content: string) -> TestExpectations {
 	defer delete(lines)
 
 	for line in lines {
+		// Check for nontest marker
+		if strings.has_prefix(strings.trim_space(line), "// nontest") {
+			expectations.is_nontest = true
+			continue
+		}
+
 		// Check for runtime error expectation
 		if idx := strings.index(line, "// expect runtime error:"); idx >= 0 {
 			msg := strings.trim_space(line[idx + len("// expect runtime error:"):])

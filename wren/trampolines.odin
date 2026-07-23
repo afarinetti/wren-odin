@@ -4,6 +4,14 @@ import "base:runtime"
 import "core:c"
 import "core:strings"
 
+// Import C standard library functions
+foreign import libc "system:c"
+foreign libc {
+	malloc :: proc(size: c.size_t) -> rawptr ---
+	@(link_name = "free")
+	free_c :: proc(ptr: rawptr) ---
+}
+
 // ============================================================================
 // Trampolines — bridge C callbacks to Odin callbacks
 // ============================================================================
@@ -81,9 +89,16 @@ load_module_trampoline :: proc "c" (raw_vm: ^RawVM, name: cstring) -> RawLoadMod
 		}
 		lr := callbacks.load_module_fn(vm, cstring_to_string(name))
 		if len(lr.source) > 0 {
-			c_source := strings.clone_to_cstring(lr.source)
-			result.source = c_source
-			result.on_complete = load_module_complete_trampoline
+			// Allocate with libc malloc so Wren can free with its allocator
+			c_source := cast([^]byte)(malloc(c.size_t(len(lr.source) + 1)))
+			if c_source != nil {
+				for i in 0 ..< len(lr.source) {
+					c_source[i] = lr.source[i]
+				}
+				c_source[len(lr.source)] = 0
+				result.source = cast(cstring)(rawptr(c_source))
+				result.on_complete = load_module_complete_trampoline
+			}
 		}
 	}
 	return result
@@ -96,7 +111,7 @@ load_module_complete_trampoline :: proc "c" (
 ) {
 	context = runtime.default_context()
 	if result.source != nil {
-		free(rawptr(result.source))
+		free_c(rawptr(result.source))
 	}
 }
 
@@ -117,7 +132,15 @@ resolve_module_trampoline :: proc "c" (
 			cstring_to_string(name),
 		)
 		if len(resolved) > 0 {
-			return strings.clone_to_cstring(resolved)
+			// Allocate with libc malloc so Wren can free with its allocator
+			c_str := cast([^]byte)(malloc(c.size_t(len(resolved) + 1)))
+			if c_str != nil {
+				for i in 0 ..< len(resolved) {
+					c_str[i] = resolved[i]
+				}
+				c_str[len(resolved)] = 0
+			}
+			return cast(cstring)(rawptr(c_str))
 		}
 	}
 	return nil

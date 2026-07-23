@@ -8,6 +8,7 @@ import "core:strings"
 // Global test context (single-threaded test runner)
 g_output_builder: strings.Builder
 g_error_msg: string
+g_current_test_dir: string // Directory of the current test file
 
 test_write_fn :: proc(vm: wren.VM, text: string) {
 	strings.write_string(&g_output_builder, text)
@@ -25,38 +26,65 @@ test_error_fn :: proc(
 		g_error_msg = message
 	}
 }
-
 test_resolve_module_fn :: proc(vm: wren.VM, importer: string, name: string) -> string {
-	fmt.printf("  Resolve: importer='%s', name='%s'\n", importer, name)
-	// Strip ./ prefix for resolution
-	var;resolved_name: string
+	// Handle relative imports
 	if len(name) >= 2 && name[0] == '.' && name[1] == '/' {
-		resolved_name = name[2:]
-	} else {
-		resolved_name = name
+		// Resolve relative to current test directory, but strip vendor/wren/test/ prefix
+		resolved := strings.concatenate({g_current_test_dir, name[2:]}, context.allocator)
+		// Strip vendor/wren/test/ prefix if present
+		prefix := "vendor/wren/test/"
+		if strings.has_prefix(resolved, prefix) {
+			resolved = resolved[len(prefix):]
+		}
+		return resolved
 	}
-	fmt.printf("    -> resolved to: '%s'\n", resolved_name)
-	return resolved_name
+	// Return absolute module name as-is
+	return name
 }
 
 test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
-	fmt.printf("  Load: name='%s'\n", name)
+	// Handle built-in optional modules (meta, random)
+	if name == "meta" {
+		content, err := os.read_entire_file_from_path(
+			"vendor/wren/src/optional/wren_opt_meta.wren",
+			context.allocator,
+		)
+		if err == os.ERROR_NONE {
+			defer delete(content)
+			content_bytes := make([]byte, len(content))
+			for i in 0 ..< len(content) {
+				content_bytes[i] = content[i]
+			}
+			return wren.LoadModuleResult{source = string(content_bytes)}
+		}
+	}
+	if name == "random" {
+		content, err := os.read_entire_file_from_path(
+			"vendor/wren/src/optional/wren_opt_random.wren",
+			context.allocator,
+		)
+		if err == os.ERROR_NONE {
+			defer delete(content)
+			content_bytes := make([]byte, len(content))
+			for i in 0 ..< len(content) {
+				content_bytes[i] = content[i]
+			}
+			return wren.LoadModuleResult{source = string(content_bytes)}
+		}
+	}
+
 	// Load module from vendor/wren/test directory
 	path, path_err := strings.concatenate({"vendor/wren/test/", name, ".wren"}, context.allocator)
 	if path_err != nil {
-		fmt.printf("    -> path concatenation failed\n")
 		return wren.LoadModuleResult{source = ""}
 	}
 	defer delete(path)
-	fmt.printf("    -> path: '%s'\n", path)
 
 	content, content_err := os.read_entire_file_from_path(path, context.allocator)
 	if content_err != os.ERROR_NONE {
-		fmt.printf("    -> file read failed: %v\n", content_err)
 		return wren.LoadModuleResult{source = ""}
 	}
 	defer delete(content)
-	fmt.printf("    -> loaded %d bytes\n", len(content))
 
 	// Copy content to avoid lifetime issues
 	content_bytes := make([]byte, len(content))
@@ -64,15 +92,18 @@ test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult 
 		content_bytes[i] = content[i]
 	}
 
-	source := string(content_bytes)
-	fmt.printf("    -> returning source (%d chars)\n", len(source))
-	return wren.LoadModuleResult{source = source}
+	return wren.LoadModuleResult{source = string(content_bytes)}
 }
 
 run_test :: proc(file: string) -> TestResult {
 	result: TestResult
 	result.file = file
-	fmt.printf("Starting test: %s\n", file)
+
+	// Skip benchmark files (they're not tests, just performance measurements)
+	if strings.has_prefix(file, "vendor/wren/test/benchmark/") {
+		result.passed = true
+		return result
+	}
 
 	// Read file content
 	content, err := os.read_entire_file_from_path(file, context.allocator)
@@ -91,6 +122,26 @@ run_test :: proc(file: string) -> TestResult {
 
 	// Parse expectations
 	expectations := parse_expectations(content_str)
+
+	// Skip nontest files (module files meant to be imported)
+	if expectations.is_nontest {
+		result.passed = true
+		return result
+	}
+
+	// Set current test directory for relative import resolution
+	// Extract directory from file path (e.g., "vendor/wren/test/core/fiber/yield_from_import.wren" -> "vendor/wren/test/core/fiber/")
+	last_slash := -1
+	for i in 0 ..< len(file) {
+		if file[i] == '/' {
+			last_slash = i
+		}
+	}
+	if last_slash >= 0 {
+		g_current_test_dir = file[:last_slash + 1]
+	} else {
+		g_current_test_dir = ""
+	}
 
 	// Reset global state
 	strings.builder_destroy(&g_output_builder)
