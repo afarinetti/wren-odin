@@ -5,15 +5,21 @@ import "core:path/filepath"
 import "core:strings"
 
 find_test_files :: proc(dir: string) -> []string {
-	files: [dynamic]string
+	regular: [dynamic]string
+	benchmarks: [dynamic]string
 
-	// Walk directory recursively
-	walk_dir(dir, &files)
+	// Walk directory recursively, separating benchmarks
+	walk_dir(dir, &regular, &benchmarks)
 
-	return files[:]
+	// Append benchmarks at the end
+	for b in benchmarks {
+		append(&regular, b)
+	}
+
+	return regular[:]
 }
 
-walk_dir :: proc(dir: string, files: ^[dynamic]string) {
+walk_dir :: proc(dir: string, files: ^[dynamic]string, benchmarks: ^[dynamic]string) {
 	entries, err := os.read_all_directory_by_path(dir, context.allocator)
 	if err != os.ERROR_NONE {
 		return
@@ -27,9 +33,15 @@ walk_dir :: proc(dir: string, files: ^[dynamic]string) {
 		}
 
 		if entry.type == .Directory {
-			walk_dir(full_path, files)
+			walk_dir(full_path, files, benchmarks)
 		} else if strings.has_suffix(entry.name, ".wren") {
-			append(files, full_path)
+			// Separate benchmark tests to run last
+			if strings.has_prefix(dir, "vendor/wren/test/benchmark") ||
+			   strings.has_prefix(full_path, "vendor/wren/test/benchmark") {
+				append(benchmarks, full_path)
+			} else {
+				append(files, full_path)
+			}
 		}
 	}
 }
