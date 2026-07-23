@@ -27,26 +27,36 @@ test_error_fn :: proc(
 }
 
 test_resolve_module_fn :: proc(vm: wren.VM, importer: string, name: string) -> string {
+	fmt.printf("  Resolve: importer='%s', name='%s'\n", importer, name)
 	// Strip ./ prefix for resolution
+	var;resolved_name: string
 	if len(name) >= 2 && name[0] == '.' && name[1] == '/' {
-		return name[2:]
+		resolved_name = name[2:]
+	} else {
+		resolved_name = name
 	}
-	return name
+	fmt.printf("    -> resolved to: '%s'\n", resolved_name)
+	return resolved_name
 }
 
 test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
+	fmt.printf("  Load: name='%s'\n", name)
 	// Load module from vendor/wren/test directory
 	path, path_err := strings.concatenate({"vendor/wren/test/", name, ".wren"}, context.allocator)
 	if path_err != nil {
+		fmt.printf("    -> path concatenation failed\n")
 		return wren.LoadModuleResult{source = ""}
 	}
 	defer delete(path)
+	fmt.printf("    -> path: '%s'\n", path)
 
 	content, content_err := os.read_entire_file_from_path(path, context.allocator)
 	if content_err != os.ERROR_NONE {
+		fmt.printf("    -> file read failed: %v\n", content_err)
 		return wren.LoadModuleResult{source = ""}
 	}
 	defer delete(content)
+	fmt.printf("    -> loaded %d bytes\n", len(content))
 
 	// Copy content to avoid lifetime issues
 	content_bytes := make([]byte, len(content))
@@ -54,12 +64,15 @@ test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult 
 		content_bytes[i] = content[i]
 	}
 
-	return wren.LoadModuleResult{source = string(content_bytes)}
+	source := string(content_bytes)
+	fmt.printf("    -> returning source (%d chars)\n", len(source))
+	return wren.LoadModuleResult{source = source}
 }
 
 run_test :: proc(file: string) -> TestResult {
 	result: TestResult
 	result.file = file
+	fmt.printf("Starting test: %s\n", file)
 
 	// Read file content
 	content, err := os.read_entire_file_from_path(file, context.allocator)
@@ -89,6 +102,7 @@ run_test :: proc(file: string) -> TestResult {
 	wren.set_write_fn(&config, test_write_fn)
 	wren.set_error_fn(&config, test_error_fn)
 	wren.set_load_module_fn(&config, test_load_module_fn)
+	wren.set_resolve_module_fn(&config, test_resolve_module_fn)
 
 	vm := wren.new_vm(&config)
 	defer wren.free_vm(&vm)
