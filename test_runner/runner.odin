@@ -26,6 +26,14 @@ test_error_fn :: proc(
 	}
 }
 
+test_resolve_module_fn :: proc(vm: wren.VM, importer: string, name: string) -> string {
+	// Strip ./ prefix for resolution
+	if len(name) >= 2 && name[0] == '.' && name[1] == '/' {
+		return name[2:]
+	}
+	return name
+}
+
 test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
 	// Load module from vendor/wren/test directory
 	path, path_err := strings.concatenate({"vendor/wren/test/", name, ".wren"}, context.allocator)
