@@ -12,7 +12,17 @@ cstring_to_string :: proc(cs: cstring) -> string {
 	if cs == nil {
 		return ""
 	}
-	return string(cs)
+	// Copy the C string data to avoid dangling pointer
+	ptr := cast([^]byte)(rawptr(cs))
+	len := 0
+	for ptr[len] != 0 {
+		len += 1
+	}
+	bytes := make([]byte, len)
+	for i in 0 ..< len {
+		bytes[i] = ptr[i]
+	}
+	return string(bytes)
 }
 
 write_trampoline :: proc "c" (raw_vm: ^RawVM, text: cstring) {

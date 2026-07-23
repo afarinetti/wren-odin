@@ -40,7 +40,6 @@ build_expected_output :: proc(expectations: TestExpectations) -> string {
 
 	builder: strings.Builder
 	strings.builder_init(&builder)
-	defer strings.builder_destroy(&builder)
 
 	for i in 0 ..< len(expectations.expected_outputs) {
 		if i > 0 {
@@ -49,5 +48,8 @@ build_expected_output :: proc(expectations: TestExpectations) -> string {
 		strings.write_string(&builder, expectations.expected_outputs[i])
 	}
 
-	return strings.to_string(builder)
+	result := strings.to_string(builder)
+	strings.builder_destroy(&builder)
+
+	return result
 }
