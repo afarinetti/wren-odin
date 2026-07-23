@@ -3,9 +3,11 @@ package main
 import "core:strings"
 
 TestExpectations :: struct {
-	expected_outputs:  [dynamic]string,
-	has_runtime_error: bool,
-	runtime_error_msg: string,
+	expected_outputs:   [dynamic]string,
+	has_runtime_error:  bool,
+	runtime_error_msg:  string,
+	has_compile_error:  bool,
+	compile_error_line: int,
 }
 
 parse_expectations :: proc(content: string) -> TestExpectations {
@@ -20,6 +22,21 @@ parse_expectations :: proc(content: string) -> TestExpectations {
 			msg := strings.trim_space(line[idx + len("// expect runtime error:"):])
 			expectations.has_runtime_error = true
 			expectations.runtime_error_msg = msg
+			continue
+		}
+
+		// Check for compile error expectation (e.g., "// expect error line 2")
+		if idx := strings.index(line, "// expect error"); idx >= 0 {
+			expectations.has_compile_error = true
+			// Try to extract line number if present
+			rest := line[idx + len("// expect error"):]
+			if line_idx := strings.index(rest, "line "); line_idx >= 0 {
+				line_num_str := strings.trim_space(rest[line_idx + len("line "):])
+				// Parse the line number (simple single-digit for now)
+				if len(line_num_str) > 0 {
+					expectations.compile_error_line = int(line_num_str[0] - '0')
+				}
+			}
 			continue
 		}
 

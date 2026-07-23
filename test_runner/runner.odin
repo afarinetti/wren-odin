@@ -73,6 +73,16 @@ run_test :: proc(file: string) -> TestResult {
 	actual_output = string(actual_output_copy)
 
 	// Check results
+	if expectations.has_compile_error {
+		if interpret_result != .CompileError {
+			result.passed = false
+			result.error = "Expected compile error but got success"
+			return result
+		}
+		result.passed = true
+		return result
+	}
+
 	if expectations.has_runtime_error {
 		if interpret_result != .RuntimeError {
 			result.passed = false
