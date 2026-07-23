@@ -12,17 +12,7 @@ cstring_to_string :: proc(cs: cstring) -> string {
 	if cs == nil {
 		return ""
 	}
-	// Cast cstring to multi-pointer to allow indexing
-	ptr := cast([^]byte)(rawptr(cs))
-	len := 0
-	for ptr[len] != 0 {
-		len += 1
-	}
-	bytes := make([]byte, len)
-	for i in 0 ..< len {
-		bytes[i] = ptr[i]
-	}
-	return string(bytes)
+	return string(cs)
 }
 
 write_trampoline :: proc "c" (raw_vm: ^RawVM, text: cstring) {
