@@ -26,6 +26,29 @@ test_error_fn :: proc(
 	}
 }
 
+test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
+	// Load module from vendor/wren/test directory
+	path, path_err := strings.concatenate({"vendor/wren/test/", name, ".wren"}, context.allocator)
+	if path_err != nil {
+		return wren.LoadModuleResult{source = ""}
+	}
+	defer delete(path)
+
+	content, content_err := os.read_entire_file_from_path(path, context.allocator)
+	if content_err != os.ERROR_NONE {
+		return wren.LoadModuleResult{source = ""}
+	}
+	defer delete(content)
+
+	// Copy content to avoid lifetime issues
+	content_bytes := make([]byte, len(content))
+	for i in 0 ..< len(content) {
+		content_bytes[i] = content[i]
+	}
+
+	return wren.LoadModuleResult{source = string(content_bytes)}
+}
+
 run_test :: proc(file: string) -> TestResult {
 	result: TestResult
 	result.file = file
@@ -57,6 +80,7 @@ run_test :: proc(file: string) -> TestResult {
 	config := wren.make_configuration()
 	wren.set_write_fn(&config, test_write_fn)
 	wren.set_error_fn(&config, test_error_fn)
+	wren.set_load_module_fn(&config, test_load_module_fn)
 
 	vm := wren.new_vm(&config)
 	defer wren.free_vm(&vm)
