@@ -61,11 +61,11 @@ error_trampoline :: proc "c" (
 		// Copy strings since they're only valid during the callback
 		module_str := ""
 		if module != nil {
-			module_str = string(module)
+			module_str = cstring_to_string(module)
 		}
 		message_str := ""
 		if message != nil {
-			message_str = string(message)
+			message_str = cstring_to_string(message)
 		}
 		callbacks.error_fn(vm, et, module_str, int(line), message_str)
 	}

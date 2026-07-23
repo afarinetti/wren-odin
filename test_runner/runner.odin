@@ -64,7 +64,13 @@ run_test :: proc(file: string) -> TestResult {
 	// Run the test
 	interpret_result := wren.interpret(vm, "main", content_str)
 
+	// Copy the string since the builder will be reused on the next test
 	actual_output := strings.to_string(g_output_builder)
+	actual_output_copy := make([]byte, len(actual_output))
+	for i in 0 ..< len(actual_output) {
+		actual_output_copy[i] = actual_output[i]
+	}
+	actual_output = string(actual_output_copy)
 
 	// Check results
 	if expectations.has_runtime_error {

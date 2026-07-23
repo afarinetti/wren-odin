@@ -42,14 +42,17 @@ build_expected_output :: proc(expectations: TestExpectations) -> string {
 	strings.builder_init(&builder)
 
 	for i in 0 ..< len(expectations.expected_outputs) {
-		if i > 0 {
-			strings.write_string(&builder, "\n")
-		}
 		strings.write_string(&builder, expectations.expected_outputs[i])
+		strings.write_string(&builder, "\n")
 	}
 
-	result := strings.to_string(builder)
+	// Copy the string before destroying the builder
+	temp := strings.to_string(builder)
+	result := make([]byte, len(temp))
+	for i in 0 ..< len(temp) {
+		result[i] = temp[i]
+	}
 	strings.builder_destroy(&builder)
 
-	return result
+	return string(result)
 }
