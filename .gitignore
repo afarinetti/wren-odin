@@ -2,3 +2,6 @@
 test_raw
 /build/
 test_highlevel
+test_import
+test_import2
+debug_import*
