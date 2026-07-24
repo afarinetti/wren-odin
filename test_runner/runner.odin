@@ -5,10 +5,8 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-// Global test context (single-threaded test runner)
 g_output_builder: strings.Builder
 g_error_msg: string
-g_current_test_dir: string // Directory of the current test file
 
 test_write_fn :: proc(vm: wren.VM, text: string) {
 	strings.write_string(&g_output_builder, text)
@@ -21,29 +19,56 @@ test_error_fn :: proc(
 	line: int,
 	message: string,
 ) {
-	// Only capture the main error message, not stack trace entries
 	if error_type == .Runtime || error_type == .Compile {
 		g_error_msg = message
 	}
 }
+
 test_resolve_module_fn :: proc(vm: wren.VM, importer: string, name: string) -> string {
-	// Handle relative imports
 	if len(name) >= 2 && name[0] == '.' && name[1] == '/' {
-		// Resolve relative to current test directory, but strip vendor/wren/test/ prefix
-		resolved := strings.concatenate({g_current_test_dir, name[2:]}, context.allocator)
-		// Strip vendor/wren/test/ prefix if present
-		prefix := "vendor/wren/test/"
-		if strings.has_prefix(resolved, prefix) {
-			resolved = resolved[len(prefix):]
+		// Find the last '/' in importer to get its directory
+		last_slash := -1
+		for i in 0 ..< len(importer) {
+			if importer[i] == '/' {
+				last_slash = i
+			}
 		}
+		base_dir := ""
+		if last_slash >= 0 {
+			base_dir = importer[:last_slash + 1]
+		}
+		resolved := strings.concatenate({base_dir, name[2:]}, context.allocator)
 		return resolved
 	}
-	// Return absolute module name as-is
+	if len(name) >= 3 && name[0] == '.' && name[1] == '.' && name[2] == '/' {
+		// Handle ../ by going up one directory
+		last_slash := -1
+		for i in 0 ..< len(importer) {
+			if importer[i] == '/' {
+				last_slash = i
+			}
+		}
+		base_dir := ""
+		if last_slash >= 0 {
+			base_dir = importer[:last_slash]
+		}
+		// Find the second-to-last '/'
+		second_last_slash := -1
+		for i in 0 ..< len(base_dir) {
+			if base_dir[i] == '/' {
+				second_last_slash = i
+			}
+		}
+		if second_last_slash >= 0 {
+			base_dir = base_dir[:second_last_slash + 1]
+		}
+		resolved := strings.concatenate({base_dir, name[3:]}, context.allocator)
+		return resolved
+	}
 	return name
 }
 
 test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
-	// Handle built-in optional modules (meta, random)
 	if name == "meta" {
 		content, err := os.read_entire_file_from_path(
 			"vendor/wren/src/optional/wren_opt_meta.wren",
@@ -73,8 +98,16 @@ test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult 
 		}
 	}
 
-	// Load module from vendor/wren/test directory
-	path, path_err := strings.concatenate({"vendor/wren/test/", name, ".wren"}, context.allocator)
+	// Module names are like "./test/language/module/..."
+	// Convert to file path: strip "./", prepend "vendor/wren/", append ".wren"
+	module_path := name
+	if strings.has_prefix(module_path, "./") {
+		module_path = module_path[2:]
+	}
+	path, path_err := strings.concatenate(
+		{"vendor/wren/", module_path, ".wren"},
+		context.allocator,
+	)
 	if path_err != nil {
 		return wren.LoadModuleResult{source = ""}
 	}
@@ -86,7 +119,6 @@ test_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult 
 	}
 	defer delete(content)
 
-	// Copy content to avoid lifetime issues
 	content_bytes := make([]byte, len(content))
 	for i in 0 ..< len(content) {
 		content_bytes[i] = content[i]
@@ -99,20 +131,17 @@ run_test :: proc(file: string) -> TestResult {
 	result: TestResult
 	result.file = file
 
-	// Skip benchmark files (they're not tests, just performance measurements)
 	if strings.has_prefix(file, "vendor/wren/test/benchmark/") {
 		result.passed = true
 		return result
 	}
 
-	// Read file content
 	content, err := os.read_entire_file_from_path(file, context.allocator)
 	if err != os.ERROR_NONE {
 		result.error = "Failed to read file"
 		return result
 	}
 
-	// Convert to string - create a copy
 	content_bytes := make([]byte, len(content))
 	for i in 0 ..< len(content) {
 		content_bytes[i] = content[i]
@@ -120,35 +149,31 @@ run_test :: proc(file: string) -> TestResult {
 	delete(content)
 	content_str := string(content_bytes)
 
-	// Parse expectations
 	expectations := parse_expectations(content_str)
 
-	// Skip nontest files (module files meant to be imported)
 	if expectations.is_nontest {
 		result.passed = true
 		return result
 	}
 
-	// Set current test directory for relative import resolution
-	// Extract directory from file path (e.g., "vendor/wren/test/core/fiber/yield_from_import.wren" -> "vendor/wren/test/core/fiber/")
-	last_slash := -1
-	for i in 0 ..< len(file) {
-		if file[i] == '/' {
-			last_slash = i
-		}
+	// Convert file path to module name (match C test runner behavior)
+	// C test runner: file="test/language/module/..." -> module="./test/language/module/..."
+	// Our file paths are like "vendor/wren/test/language/module/..."
+	module_name := file
+	if strings.has_prefix(module_name, "vendor/wren/") {
+		module_name = module_name[12:]
 	}
-	if last_slash >= 0 {
-		g_current_test_dir = file[:last_slash + 1]
-	} else {
-		g_current_test_dir = ""
+	if strings.has_suffix(module_name, ".wren") {
+		module_name = module_name[:len(module_name) - 5]
+	}
+	if !strings.has_prefix(module_name, "./") {
+		module_name = strings.concatenate({"./", module_name}, context.allocator)
 	}
 
-	// Reset global state
 	strings.builder_destroy(&g_output_builder)
 	strings.builder_init(&g_output_builder)
 	g_error_msg = ""
 
-	// Create VM with output capture
 	config := wren.make_configuration()
 	wren.set_write_fn(&config, test_write_fn)
 	wren.set_error_fn(&config, test_error_fn)
@@ -158,10 +183,8 @@ run_test :: proc(file: string) -> TestResult {
 	vm := wren.new_vm(&config)
 	defer wren.free_vm(&vm)
 
-	// Run the test
-	interpret_result := wren.interpret(vm, "main", content_str)
+	interpret_result := wren.interpret(vm, module_name, content_str)
 
-	// Copy the string since the builder will be reused on the next test
 	actual_output := strings.to_string(g_output_builder)
 	actual_output_copy := make([]byte, len(actual_output))
 	for i in 0 ..< len(actual_output) {
@@ -169,7 +192,6 @@ run_test :: proc(file: string) -> TestResult {
 	}
 	actual_output = string(actual_output_copy)
 
-	// Check results
 	if expectations.has_compile_error {
 		if interpret_result != .CompileError {
 			result.passed = false
@@ -205,7 +227,6 @@ run_test :: proc(file: string) -> TestResult {
 		return result
 	}
 
-	// Compare output with expectations
 	expected_output := build_expected_output(expectations)
 
 	if actual_output == expected_output {

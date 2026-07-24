@@ -6,10 +6,75 @@ import "core:strings"
 
 // Import C standard library functions
 foreign import libc "system:c"
+
 foreign libc {
 	malloc :: proc(size: c.size_t) -> rawptr ---
 	@(link_name = "free")
 	free_c :: proc(ptr: rawptr) ---
+}
+
+// ============================================================================
+// Foreign Method Dispatch
+// ============================================================================
+
+// Global dispatch table for foreign methods
+g_foreign_method_handlers: [dynamic]ForeignMethodHandler
+g_foreign_class_handlers: [dynamic]ForeignClassHandler
+
+ForeignMethodHandler :: struct {
+	module:     string,
+	class_name: string,
+	signature:  string,
+	fn:         RawForeignMethodFn,
+}
+
+ForeignClassHandler :: struct {
+	module:     string,
+	class_name: string,
+	allocate:   RawForeignMethodFn,
+	finalize:   RawFinalizerFn,
+}
+
+// Register a foreign method handler
+register_foreign_method :: proc(
+	module: string,
+	class_name: string,
+	signature: string,
+	fn: RawForeignMethodFn,
+) {
+	append(
+		&g_foreign_method_handlers,
+		ForeignMethodHandler {
+			module = module,
+			class_name = class_name,
+			signature = signature,
+			fn = fn,
+		},
+	)
+}
+
+// Register a foreign class handler
+register_foreign_class :: proc(
+	module: string,
+	class_name: string,
+	allocate: RawForeignMethodFn,
+	finalize: RawFinalizerFn,
+) {
+	append(
+		&g_foreign_class_handlers,
+		ForeignClassHandler {
+			module = module,
+			class_name = class_name,
+			allocate = allocate,
+			finalize = finalize,
+		},
+	)
+}
+
+// Clear all registered handlers
+clear_foreign_handlers :: proc() {
+	g_foreign_method_handlers = nil
+	g_foreign_class_handlers = nil
 }
 
 // ============================================================================
@@ -139,8 +204,8 @@ resolve_module_trampoline :: proc "c" (
 					c_str[i] = resolved[i]
 				}
 				c_str[len(resolved)] = 0
+				return cast(cstring)(rawptr(c_str))
 			}
-			return cast(cstring)(rawptr(c_str))
 		}
 	}
 	return nil
@@ -159,6 +224,7 @@ bind_foreign_method_trampoline :: proc "c" (
 		vm := VM {
 			raw = raw_vm,
 		}
+		// Call Odin callback first
 		fn := callbacks.bind_foreign_method_fn(
 			vm,
 			cstring_to_string(module),
@@ -167,7 +233,26 @@ bind_foreign_method_trampoline :: proc "c" (
 			cstring_to_string(signature),
 		)
 		if fn != nil {
-			return foreign_method_dispatch_trampoline
+			// fn is a ForeignMethodFn (Odin callback), but we need RawForeignMethodFn (C callback)
+			// We can't directly return it - we need to look up in dispatch table
+			// For now, fall through to dispatch table lookup
+		}
+	}
+	// Fall back to global dispatch table
+	// Build full signature like C test runner: "static ClassName.signature"
+	module_str := cstring_to_string(module)
+	class_str := cstring_to_string(class_name)
+	sig_str := cstring_to_string(signature)
+
+	full_name := ""
+	if is_static {
+		full_name = "static "
+	}
+	full_name = strings.concatenate({full_name, class_str, ".", sig_str}, context.allocator)
+
+	for handler in g_foreign_method_handlers {
+		if handler.module == module_str && handler.signature == full_name {
+			return handler.fn
 		}
 	}
 	return nil
@@ -190,19 +275,19 @@ bind_foreign_class_trampoline :: proc "c" (
 			cstring_to_string(module),
 			cstring_to_string(class_name),
 		)
-		if methods.allocate != nil {
-			result.allocate = foreign_class_allocate_dispatch
-			result.finalize = methods.finalize
+		// methods.allocate is ForeignMethodFn (Odin), but result.allocate is RawForeignMethodFn (C)
+		// We need to look up in dispatch table instead
+	}
+	// Fall back to global dispatch table
+	module_str := cstring_to_string(module)
+	class_str := cstring_to_string(class_name)
+
+	for handler in g_foreign_class_handlers {
+		if handler.module == module_str && handler.class_name == class_str {
+			result.allocate = handler.allocate
+			result.finalize = handler.finalize
+			return result
 		}
 	}
 	return result
-}
-
-// Placeholder trampolines for foreign method dispatch
-foreign_method_dispatch_trampoline :: proc "c" (raw_vm: ^RawVM) {
-	// No-op placeholder — overridden by API test support
-}
-
-foreign_class_allocate_dispatch :: proc "c" (raw_vm: ^RawVM) {
-	// No-op placeholder — overridden by API test support
 }
