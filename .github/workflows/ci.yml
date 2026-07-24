@@ -22,6 +22,8 @@ jobs:
 
     - name: Build and run full test suite
       run: |
+        mkdir -p build
+
         # Build test runner
         odin build test_runner -out:build/test_runner
 
