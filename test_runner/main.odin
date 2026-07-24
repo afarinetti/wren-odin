@@ -789,35 +789,18 @@ main :: proc() {
 	failed := 0
 	idx := 0
 
-	// Open results file
-	results_fd := os.open("test_results.txt", .CREATE, .WRITE, 0o644)
-	if results_fd == 0 {
-		fmt.println("Failed to open results file")
-		os.exit(1)
-	}
-
+	// Run tests
 	for file in test_files {
 		result := run_test(file)
 		idx += 1
 
-		// Write result to file immediately
+		// Print result to stdout
 		if result.passed {
 			passed += 1
-			line := fmt.asprintf("✓ %s\n", result.file)
-			os.write(results_fd, line)
-			free(rawptr(line))
-		} else {
-			failed += 1
-			line := fmt.asprintf("✗ %s\n", result.file)
-			os.write(results_fd, line)
-			free(rawptr(line))
-		}
-
-		// Print to stdout too
-		if result.passed {
 			fmt.printf("✓ %s\n", result.file)
 		} else {
-			fmt.printf(" %s\n", result.file)
+			failed += 1
+			fmt.printf("✗ %s\n", result.file)
 			if result.error != "" {
 				fmt.printf("  Error: %s\n", result.error)
 			}
@@ -827,17 +810,6 @@ main :: proc() {
 			}
 		}
 	}
-
-	// Write summary to file
-	summary := fmt.asprintf(
-		"\nTotal: %d\nPassed: %d\nFailed: %d\n",
-		passed + failed,
-		passed,
-		failed,
-	)
-	os.write(results_fd, summary)
-	free(rawptr(summary))
-	os.close(results_fd)
 
 	fmt.println("")
 	fmt.printf("Total:  %d\n", passed + failed)
