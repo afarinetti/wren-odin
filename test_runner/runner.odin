@@ -240,6 +240,9 @@ run_test :: proc(file: string) -> TestResult {
 	} else if strings.has_suffix(file, "/api/reset_stack_after_foreign_construct.wren") {
 		call_output := run_reset_stack_after_foreign_construct_test(vm, module_name)
 		actual_output = call_output
+	} else if strings.has_suffix(file, "/api/resolution.wren") {
+		// Resolution test uses per-test VM configuration, handled in foreign methods
+		// Just run the test normally
 	}
 
 	expected_output := build_expected_output(expectations)

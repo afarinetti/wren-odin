@@ -1,6 +1,7 @@
 package main
 
 import "../wren"
+import "base:runtime"
 import "core:c"
 import "core:fmt"
 import "core:os"
@@ -586,28 +587,175 @@ call_calls_foreign_api :: proc "c" (vm: ^wren.RawVM) {
 
 // Foreign method implementation for resolution.noResolver()
 resolution_no_resolver :: proc "c" (vm: ^wren.RawVM) {
-	// Return "success" - simplified version
-	wren.RawSetSlotString(vm, 0, "success")
+	context = runtime.default_context()
+
+	// Reset output builder for nested VM
+	strings.builder_destroy(&resolution_output)
+	strings.builder_init(&resolution_output)
+
+	// Create a new VM with default configuration (no resolver)
+	config := wren.make_configuration()
+	wren.set_write_fn(&config, resolution_write_fn)
+	wren.set_error_fn(&config, resolution_error_fn)
+	wren.set_load_module_fn(&config, resolution_load_module_fn)
+
+	test_vm := wren.new_vm(&config)
+	defer wren.free_vm(&test_vm)
+
+	result := wren.interpret(test_vm, "main", "import \"foo/bar\"")
+
+	// Copy nested VM output to main output
+	nested_output := strings.to_string(resolution_output)
+	strings.write_string(&g_output_builder, nested_output)
+
+	if result != .Ok {
+		wren.RawSetSlotString(vm, 0, "error")
+	} else {
+		wren.RawSetSlotString(vm, 0, "success")
+	}
 }
 
 // Foreign method implementation for resolution.returnsNull()
 resolution_returns_null :: proc "c" (vm: ^wren.RawVM) {
-	wren.RawSetSlotString(vm, 0, "success")
+	context = runtime.default_context()
+
+	// Create a new VM with resolver that returns null
+	config := wren.make_configuration()
+	wren.set_write_fn(&config, resolution_write_fn)
+	wren.set_error_fn(&config, resolution_error_fn)
+	wren.set_load_module_fn(&config, resolution_load_module_fn)
+	wren.set_resolve_module_fn(&config, resolution_resolve_to_null)
+
+	test_vm := wren.new_vm(&config)
+	defer wren.free_vm(&test_vm)
+
+	result := wren.interpret(test_vm, "main", "import \"foo/bar\"")
+
+	if result != .Ok {
+		wren.RawSetSlotString(vm, 0, "error")
+	} else {
+		wren.RawSetSlotString(vm, 0, "success")
+	}
 }
 
 // Foreign method implementation for resolution.changesString()
 resolution_changes_string :: proc "c" (vm: ^wren.RawVM) {
-	wren.RawSetSlotString(vm, 0, "success")
+	context = runtime.default_context()
+
+	// Create a new VM with resolver that changes module names
+	config := wren.make_configuration()
+	wren.set_write_fn(&config, resolution_write_fn)
+	wren.set_error_fn(&config, resolution_error_fn)
+	wren.set_load_module_fn(&config, resolution_load_module_fn)
+	wren.set_resolve_module_fn(&config, resolution_resolve_change)
+
+	test_vm := wren.new_vm(&config)
+	defer wren.free_vm(&test_vm)
+
+	result := wren.interpret(test_vm, "main", "import \"foo|bar\"")
+
+	if result != .Ok {
+		wren.RawSetSlotString(vm, 0, "error")
+	} else {
+		wren.RawSetSlotString(vm, 0, "success")
+	}
 }
 
 // Foreign method implementation for resolution.shared()
 resolution_shared :: proc "c" (vm: ^wren.RawVM) {
-	wren.RawSetSlotString(vm, 0, "success")
+	context = runtime.default_context()
+
+	// Create a new VM with resolver that changes module names
+	config := wren.make_configuration()
+	wren.set_write_fn(&config, resolution_write_fn)
+	wren.set_error_fn(&config, resolution_error_fn)
+	wren.set_load_module_fn(&config, resolution_load_module_fn)
+	wren.set_resolve_module_fn(&config, resolution_resolve_change)
+
+	test_vm := wren.new_vm(&config)
+	defer wren.free_vm(&test_vm)
+
+	result := wren.interpret(test_vm, "main", "import \"foo|bar\"\nimport \"foo/bar\"")
+
+	if result != .Ok {
+		wren.RawSetSlotString(vm, 0, "error")
+	} else {
+		wren.RawSetSlotString(vm, 0, "success")
+	}
 }
 
 // Foreign method implementation for resolution.importer()
 resolution_importer :: proc "c" (vm: ^wren.RawVM) {
-	wren.RawSetSlotString(vm, 0, "success")
+	context = runtime.default_context()
+
+	// Create a new VM with resolver that changes module names
+	config := wren.make_configuration()
+	wren.set_write_fn(&config, resolution_write_fn)
+	wren.set_error_fn(&config, resolution_error_fn)
+	wren.set_load_module_fn(&config, resolution_load_module_fn)
+	wren.set_resolve_module_fn(&config, resolution_resolve_change)
+
+	test_vm := wren.new_vm(&config)
+	defer wren.free_vm(&test_vm)
+
+	result := wren.interpret(test_vm, "main", "import \"baz|bang\"")
+
+	if result != .Ok {
+		wren.RawSetSlotString(vm, 0, "error")
+	} else {
+		wren.RawSetSlotString(vm, 0, "success")
+	}
+}
+
+// Resolution test helper functions
+resolution_output: strings.Builder
+resolution_error_msg: string
+
+resolution_write_fn :: proc(vm: wren.VM, text: string) {
+	strings.write_string(&resolution_output, text)
+}
+
+resolution_error_fn :: proc(
+	vm: wren.VM,
+	error_type: wren.ErrorType,
+	module: string,
+	line: int,
+	message: string,
+) {
+	if error_type == .Runtime {
+		strings.write_string(&resolution_output, message)
+		strings.write_string(&resolution_output, "\n")
+	}
+}
+
+resolution_load_module_fn :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
+	if name == "main/baz/bang" {
+		return wren.LoadModuleResult{source = "import \"foo|bar\""}
+	}
+	return wren.LoadModuleResult{source = "System.print(\"ok\")"}
+}
+
+resolution_resolve_to_null :: proc(vm: wren.VM, importer: string, name: string) -> string {
+	return ""
+}
+
+resolution_resolve_change :: proc(vm: wren.VM, importer: string, name: string) -> string {
+	context = runtime.default_context()
+	// Concatenate importer and name with /
+	result, _ := strings.concatenate({importer, "/", name}, context.allocator)
+	defer delete(result)
+	// Replace | with /
+	for i in 0 ..< len(result) {
+		if result[i] == '|' {
+			replacement, _ := strings.concatenate(
+				{result[:i], "/", result[i + 1:]},
+				context.allocator,
+			)
+			defer delete(replacement)
+			result = replacement
+		}
+	}
+	return result
 }
 
 // Foreign method implementation for handle.set_value
