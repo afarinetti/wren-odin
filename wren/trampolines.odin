@@ -250,6 +250,7 @@ bind_foreign_method_trampoline :: proc "c" (
 	}
 	full_name = strings.concatenate({full_name, class_str, ".", sig_str}, context.allocator)
 
+	// Look up in the dispatch table
 	for handler in g_foreign_method_handlers {
 		if handler.module == module_str && handler.signature == full_name {
 			return handler.fn
@@ -257,6 +258,7 @@ bind_foreign_method_trampoline :: proc "c" (
 	}
 	return nil
 }
+
 
 bind_foreign_class_trampoline :: proc "c" (
 	raw_vm: ^RawVM,

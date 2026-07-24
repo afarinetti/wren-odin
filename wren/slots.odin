@@ -1,6 +1,7 @@
 package wren
 
 import "core:c"
+import "core:fmt"
 import "core:strings"
 
 // ============================================================================
@@ -26,7 +27,6 @@ set_bool :: proc(vm: VM, slot: int, value: bool) {
 set_double :: proc(vm: VM, slot: int, value: f64) {
 	RawSetSlotDouble(vm.raw, c.int(slot), value)
 }
-
 set_string :: proc(vm: VM, slot: int, value: string) {
 	c_str := strings.clone_to_cstring(value)
 	defer free(rawptr(c_str))

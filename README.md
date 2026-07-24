@@ -53,7 +53,77 @@ The crash occurs in the Wren VM's string handling code during raw string indenta
         // Process value
     }
 }
+
+### High-Level Foreign Methods (Recommended)
+
+The high-level API provides a much simpler way to write foreign methods without dealing with slot management:
+
+```odin
+import "wren"
+
+// Define foreign methods using Value types - no slot management needed!
+add_numbers :: proc(args: []wren.Value) -> wren.Value {
+    a := wren.as_num(args[0])
+    b := wren.as_num(args[1])
+    return wren.num_value(a + b)
+}
+
+create_list :: proc(args: []wren.Value) -> wren.Value {
+    // Use make() to allocate on heap
+    items := make([]wren.Value, 5)
+    items[0] = wren.num_value(1)
+    items[1] = wren.num_value(2)
+    items[2] = wren.num_value(3)
+    items[3] = wren.num_value(4)
+    items[4] = wren.num_value(5)
+    return wren.list_value(items)
+}
+
+concat_strings :: proc(args: []wren.Value) -> wren.Value {
+    a := wren.as_string(args[0])
+    b := wren.as_string(args[1])
+    return wren.string_value(a + b)
+}
+
+main :: proc() {
+    config := wren.make_configuration()
+    // ... setup callbacks ...
+    vm := wren.new_vm(&config)
+    defer wren.free_vm(&vm)
+
+    // Register methods with the high-level API
+    wren.register_method(vm, "./math", "Math", "static Math.add(_,_)", add_numbers)
+    wren.register_method(vm, "./interop", "Interop", "static Interop.createList()", create_list)
+    wren.register_method(vm, "./strings", "Strings", "static Strings.concat(_,_)", concat_strings)
+
+    // Run Wren code
+    wren.interpret(vm, "./math", `
+        class Math {
+            foreign static add(a, b)
+        }
+        System.print(Math.add(10, 20))  // Output: 30
+    `)
+}
 ```
+
+**Benefits of the high-level API:**
+- No slot management (`ensure_slots`, `get_slot_*`, `set_slot_*`)
+- No raw VM pointers (`^RawVM`)
+- Type-safe value extraction with `as_num`, `as_string`, `as_list`, etc.
+- Simple value construction with `num_value`, `string_value`, `list_value`, etc.
+- Automatic slot cleanup and memory management
+
+**Value Types:**
+- `wren.num_value(f64)` - Create a number value
+- `wren.string_value(string)` - Create a string value
+- `wren.bool_value(bool)` - Create a boolean value
+- `wren.list_value([]Value)` - Create a list value
+- `wren.map_value(Map)` - Create a map value
+- `wren.as_num(Value)` - Extract a number
+- `wren.as_string(Value)` - Extract a string
+- `wren.as_bool(Value)` - Extract a boolean
+- `wren.as_list(Value)` - Extract a list
+- `wren.as_map(Value)` - Extract a map
 
 ### Foreign Method Binding
 
@@ -200,13 +270,15 @@ Failed: 1
 
 ```
 wren-odin/
-── wren/                    # Odin bindings package
+├── wren/                    # Odin bindings package
 │   ├── wren_raw.odin       # Raw C API bindings
 │   ├── trampolines.odin    # C callback bridges
 │   ├── slots.odin          # Slot operations
 │   ├── vm.odin             # VM lifecycle and wrenCall()
 │   ├── config.odin         # Configuration helpers
-│   ── types.odin          # Public types
+│   ├── types.odin          # Public types
+│   ├── value.odin          # Value type and conversion functions
+│   └── high_level.odin     # High-level method registration API
 ├── test_runner/             # Test runner
 │   ├── main.odin           # API test implementations
 │   ├── runner.odin         # Test execution and wrenCall() tests
@@ -217,7 +289,8 @@ wren-odin/
 │   ├── list_map_test.odin  # List/map operations
 │   ├── string_test.odin    # String operations
 │   ├── bool_null_test.odin # Boolean/null handling
-│   └── complex_data_test.odin # Complex data structures
+│   ├── complex_data_test.odin # Complex data structures
+│   └── high_level_test.odin # High-level API demonstration
 ├── vendor/wren/             # Wren source (git submodule)
 ├── build_wren.sh           # Wren build script
 └── TODO.md                 # Project status
