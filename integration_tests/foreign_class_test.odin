@@ -163,6 +163,8 @@ main :: proc() {
 		"Point.init new(_,_)",
 		point2d_construct_xy,
 	)
+	// Debug: try registering with different signature formats
+	wren.register_foreign_method("./foreign_class", "Point", "init new(_,_)", point2d_construct_xy)
 	g_error_msg = ""
 
 	config := wren.make_configuration()
