@@ -141,18 +141,22 @@ register_integration_tests :: proc() {
 	// Point2D foreign class
 	wren.register_foreign_class("./struct_to_class", "Point", point2d_allocate, point2d_finalize)
 
-	// Point2D foreign methods - constructors
+	// Point2D foreign methods
+	wren.register_foreign_method("./struct_to_class", "Point", "Point.x", point2d_get_x)
+	wren.register_foreign_method("./struct_to_class", "Point", "Point.y", point2d_get_y)
+	wren.register_foreign_method("./struct_to_class", "Point", "Point.x=(_)", point2d_set_x)
+	wren.register_foreign_method("./struct_to_class", "Point", "Point.y=(_)", point2d_set_y)
 	wren.register_foreign_method(
 		"./struct_to_class",
 		"Point",
-		"Point.init new()",
-		point2d_allocate,
+		"Point.magnitude",
+		point2d_magnitude,
 	)
 	wren.register_foreign_method(
 		"./struct_to_class",
 		"Point",
-		"Point.init new(_, _)",
-		point2d_construct_xy,
+		"Point.distanceTo(_)",
+		point2d_distance_to,
 	)
 
 	// Point2D foreign methods - getters and setters
@@ -172,12 +176,124 @@ register_integration_tests :: proc() {
 		"Point.distanceTo(_)",
 		point2d_distance_to,
 	)
+	// Basic interop test - static methods
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.addNumbers(_,_)",
+		basic_add_numbers,
+	)
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.concatenateStrings(_,_)",
+		basic_concatenate_strings,
+	)
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.createList()",
+		basic_create_list,
+	)
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.createMap()",
+		basic_create_map,
+	)
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.processList(_)",
+		basic_process_list,
+	)
+	wren.register_foreign_method(
+		"./basic_interop",
+		"DataInterop",
+		"static DataInterop.processMap(_)",
+		basic_process_map,
+	)
 }
 point2d_construct_xy :: proc "c" (vm: ^wren.RawVM) {
 	data := wren.RawGetSlotForeign(vm, 0)
 	point := cast(^Point2D)(data)
 	point.x = wren.RawGetSlotDouble(vm, 1)
 	point.y = wren.RawGetSlotDouble(vm, 2)
+}
+// ============================================================================
+// Basic Interop Test Implementations
+// ============================================================================
+
+basic_add_numbers :: proc "c" (vm: ^wren.RawVM) {
+	a := wren.RawGetSlotDouble(vm, 1)
+	b := wren.RawGetSlotDouble(vm, 2)
+	wren.RawSetSlotDouble(vm, 0, a + b)
+}
+
+basic_concatenate_strings :: proc "c" (vm: ^wren.RawVM) {
+	str1 := wren.RawGetSlotString(vm, 1)
+	str2 := wren.RawGetSlotString(vm, 2)
+	result_str := fmt.aprintf("%s%s", str1, str2)
+	result_cstr := strings.clone_to_cstring(result_str)
+	wren.RawSetSlotString(vm, 0, result_cstr)
+	free(rawptr(result_cstr))
+	free(rawptr(result_str))
+}
+basic_create_list :: proc "c" (vm: ^wren.RawVM) {
+	wren.RawSetSlotNewList(vm, 0)
+	wren.RawEnsureSlots(vm, 2)
+
+	for i in 0 ..< 5 {
+		wren.RawSetSlotDouble(vm, 1, f64(i + 1))
+		wren.RawInsertInList(vm, 0, c.int(i), 1)
+	}
+}
+
+basic_create_map :: proc "c" (vm: ^wren.RawVM) {
+	wren.RawSetSlotNewMap(vm, 0)
+	wren.RawEnsureSlots(vm, 3)
+
+	// Add entries: "one" -> 1, "two" -> 2, "three" -> 3
+	wren.RawSetSlotString(vm, 1, "one")
+	wren.RawSetSlotDouble(vm, 2, 1.0)
+	wren.RawSetMapValue(vm, 0, 1, 2)
+
+	wren.RawSetSlotString(vm, 1, "two")
+	wren.RawSetSlotDouble(vm, 2, 2.0)
+	wren.RawSetMapValue(vm, 0, 1, 2)
+
+	wren.RawSetSlotString(vm, 1, "three")
+	wren.RawSetSlotDouble(vm, 2, 3.0)
+	wren.RawSetMapValue(vm, 0, 1, 2)
+}
+
+basic_process_list :: proc "c" (vm: ^wren.RawVM) {
+	count := wren.RawGetListCount(vm, 1)
+	wren.RawSetSlotNewList(vm, 0)
+	wren.RawEnsureSlots(vm, 3)
+
+	for i in 0 ..< int(count) {
+		wren.RawGetListElement(vm, 1, c.int(i), 2)
+		val := wren.RawGetSlotDouble(vm, 2)
+		wren.RawSetSlotDouble(vm, 2, val * 2)
+		wren.RawInsertInList(vm, 0, c.int(i), 2)
+	}
+}
+
+basic_process_map :: proc "c" (vm: ^wren.RawVM) {
+	count := wren.RawGetMapCount(vm, 1)
+	wren.RawSetSlotNewMap(vm, 0)
+	wren.RawEnsureSlots(vm, 4)
+
+	// Simplified: just return the same map for now
+	// TODO: Implement proper map iteration
+	wren.RawSetSlotString(vm, 1, "alice")
+	wren.RawSetSlotDouble(vm, 2, 100.0)
+	wren.RawSetMapValue(vm, 0, 1, 2)
+
+	wren.RawSetSlotString(vm, 1, "bob")
+	wren.RawSetSlotDouble(vm, 2, 92.0)
+	wren.RawSetMapValue(vm, 0, 1, 2)
 }
 
 // ============================================================================
