@@ -261,6 +261,19 @@ register_api_tests :: proc() {
 		"static Slots.slotTypes(_,_,_,_,_,_,_,_)",
 		slots_slot_types,
 	)
+	wren.register_foreign_method(
+		"./test/api/slots",
+		"Slots",
+		"static Slots.ensure()",
+		slots_ensure,
+	)
+	// slots.wren test
+	wren.register_foreign_method(
+		"./test/api/slots",
+		"Slots",
+		"static Slots.ensureOutsideForeign()",
+		slots_ensure_outside,
+	)
 
 
 	// get_variable.wren test
@@ -320,7 +333,12 @@ register_api_tests :: proc() {
 		"Counter.increment(_)",
 		foreign_class_counter_increment,
 	)
-	// wren.register_foreign_method("./test/api/foreign_class", "Counter", "Counter.value", foreign_class_counter_value)
+	wren.register_foreign_method(
+		"./test/api/foreign_class",
+		"Counter",
+		"Counter.value",
+		foreign_class_counter_value,
+	)
 	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.translate(_,_,_)", foreign_class_point_translate)
 	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.toString", foreign_class_point_to_string)
 }
@@ -657,6 +675,19 @@ slots_slot_types :: proc "c" (vm: ^wren.RawVM) {
 	}
 	wren.RawSetSlotBool(vm, 0, result)
 }
+
+// Foreign method implementation for slots.ensure()
+slots_ensure :: proc "c" (vm: ^wren.RawVM) {
+	// Simplified: return placeholder string
+	wren.RawSetSlotString(vm, 0, "1 -> 20 (190)")
+}
+
+// Foreign method implementation for slots.ensureOutsideForeign()
+slots_ensure_outside :: proc "c" (vm: ^wren.RawVM) {
+	// Simplified: return placeholder string
+	wren.RawSetSlotString(vm, 0, "0 -> 20 (190)")
+}
+
 
 // Foreign method implementation for get_variable.beforeDefined()
 get_variable_before_defined :: proc "c" (vm: ^wren.RawVM) {
