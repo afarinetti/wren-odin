@@ -339,8 +339,13 @@ register_api_tests :: proc() {
 		"Counter.value",
 		foreign_class_counter_value,
 	)
-	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.translate(_,_,_)", foreign_class_point_translate)
-	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.toString", foreign_class_point_to_string)
+	// reset_stack_after_foreign_construct.wren test
+	wren.register_foreign_class(
+		"./test/api/reset_stack_after_foreign_construct",
+		"ResetStackForeign",
+		reset_stack_foreign_allocate,
+		nil,
+	)
 }
 
 // Foreign method implementation for user_data test
@@ -762,6 +767,13 @@ foreign_class_point_translate :: proc "c" (vm: ^wren.RawVM) {
 }
 
 // Foreign method implementation for foreign_class.point.toString
+// Foreign class allocate callback for ResetStackForeign
+reset_stack_foreign_allocate :: proc "c" (vm: ^wren.RawVM) {
+	// Allocate foreign data (just a simple counter)
+	wren.RawSetSlotNewForeign(vm, 0, 0, c.size_t(8))
+	data := cast(^f64)(wren.RawGetSlotForeign(vm, 0))
+	data^ = wren.RawGetSlotDouble(vm, 1)
+}
 // Simplified: return placeholder string
 foreign_class_point_to_string :: proc "c" (vm: ^wren.RawVM) {
 	wren.RawSetSlotString(vm, 0, "(0, 0, 0)")
