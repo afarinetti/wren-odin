@@ -34,13 +34,31 @@ jobs:
 
         # Run test runner (Wren's tests + our API tests)
         # NOTE: test_runner may segfault during cleanup (known stack alignment issue).
-        # All tests execute successfully before the crash, so we tolerate exit code 139.
+        # We capture output and verify tests passed before tolerating exit code 139.
         set +e
-        ./build/test_runner
+        test_output=$(./build/test_runner 2>&1)
         test_runner_exit=$?
         set -e
-        if [ "$test_runner_exit" -ne 0 ] && [ "$test_runner_exit" -ne 139 ]; then
-          echo "test_runner failed with unexpected exit code: $test_runner_exit"
+
+        # Check for test failures in output
+        if echo "$test_output" | grep -q "✗\|FAIL\|failed"; then
+          echo "Test failures detected:"
+          echo "$test_output" | grep -E "✗|FAIL|failed" | head -20
+          exit 1
+        fi
+
+        # If segfault (139), verify it's the known cleanup issue by checking tests completed
+        if [ "$test_runner_exit" -eq 139 ]; then
+          if echo "$test_output" | grep -q "Total:.*Passed:"; then
+            echo "Tests completed successfully (segfault during cleanup is known issue)"
+          else
+            echo "Segfault occurred before tests completed:"
+            echo "$test_output" | tail -30
+            exit 1
+          fi
+        elif [ "$test_runner_exit" -ne 0 ]; then
+          echo "test_runner failed with exit code: $test_runner_exit"
+          echo "$test_output" | tail -30
           exit $test_runner_exit
         fi
 
