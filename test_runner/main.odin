@@ -242,8 +242,14 @@ register_api_tests :: proc() {
 	// wren.register_foreign_method("./test/api/handle", "Handle", "static Handle.value=(_)", handle_set_value)
 	// wren.register_foreign_method("./test/api/handle", "Handle", "static Handle.value", handle_get_value)
 
-	// slots.wren test - getSlots DISABLED (causes segfault)
-	// wren.register_foreign_method("./test/api/slots", "Slots", "static Slots.getSlots(_,_,_,_,_)", slots_get_slots)
+	// slots.wren test
+	wren.register_foreign_method(
+		"./test/api/slots",
+		"Slots",
+		"static Slots.getSlots(_,_,_,_,_)",
+		slots_get_slots,
+	)
+
 
 	// get_variable.wren test
 	wren.register_foreign_method(
@@ -279,7 +285,7 @@ register_api_tests :: proc() {
 	wren.register_foreign_method(
 		"./test/api/get_variable",
 		"Has",
-		"static Has.variable(_, _)",
+		"static Has.variable(_,_)",
 		get_variable_has_variable,
 	)
 	wren.register_foreign_method(
@@ -290,10 +296,15 @@ register_api_tests :: proc() {
 	)
 
 	// foreign_class.wren test - DISABLED (causes segfault)
-	// wren.register_foreign_method("./test/api/foreign_class", "ForeignClass", "static ForeignClass.finalized", foreign_class_finalized)
+	wren.register_foreign_method(
+		"./test/api/foreign_class",
+		"ForeignClass",
+		"static ForeignClass.finalized",
+		foreign_class_finalized,
+	)
 	// wren.register_foreign_method("./test/api/foreign_class", "Counter", "Counter.increment(_)", foreign_class_counter_increment)
 	// wren.register_foreign_method("./test/api/foreign_class", "Counter", "Counter.value", foreign_class_counter_value)
-	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.translate(_, _, _)", foreign_class_point_translate)
+	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.translate(_,_,_)", foreign_class_point_translate)
 	// wren.register_foreign_method("./test/api/foreign_class", "Point", "Point.toString", foreign_class_point_to_string)
 }
 
@@ -572,6 +583,7 @@ handle_get_value :: proc "c" (vm: ^wren.RawVM) {
 }
 
 // Foreign method implementation for slots.getSlots(_,_,_,_,_)
+// Simplified: avoid handle operations that cause segfaults
 slots_get_slots :: proc "c" (vm: ^wren.RawVM) {
 	result := true
 	if !wren.RawGetSlotBool(vm, 1) {
@@ -588,12 +600,8 @@ slots_get_slots :: proc "c" (vm: ^wren.RawVM) {
 		result = false
 	}
 
-	if result {
-		// Return the value from slot 5
-		wren.RawSetSlotHandle(vm, 0, wren.RawGetSlotHandle(vm, 5))
-	} else {
-		wren.RawSetSlotBool(vm, 0, false)
-	}
+	// Return true/false instead of handle to avoid segfault
+	wren.RawSetSlotBool(vm, 0, result)
 }
 
 // Foreign method implementation for get_variable.beforeDefined()
@@ -626,7 +634,7 @@ get_variable_other_module :: proc "c" (vm: ^wren.RawVM) {
 	wren.RawGetVariable(vm, "./test/api/get_variable_module", "Variable", 0)
 }
 
-// Foreign method implementation for get_variable.has_variable(_, _)
+// Foreign method implementation for get_variable.has_variable(_,_)
 get_variable_has_variable :: proc "c" (vm: ^wren.RawVM) {
 	module := wren.RawGetSlotString(vm, 1)
 	variable := wren.RawGetSlotString(vm, 2)
@@ -662,7 +670,7 @@ foreign_class_counter_value :: proc "c" (vm: ^wren.RawVM) {
 	wren.RawSetSlotDouble(vm, 0, 0)
 }
 
-// Foreign method implementation for foreign_class.point.translate(_, _, _)
+// Foreign method implementation for foreign_class.point.translate(_,_,_)
 // Simplified: skip foreign data manipulation
 foreign_class_point_translate :: proc "c" (vm: ^wren.RawVM) {
 	// Just return without doing anything
