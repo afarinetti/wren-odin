@@ -767,6 +767,10 @@ foreign_class_point_to_string :: proc "c" (vm: ^wren.RawVM) {
 	wren.RawSetSlotString(vm, 0, "(0, 0, 0)")
 }
 
+// Global results array to avoid stack allocation issues
+g_results: [1024]TestResult
+g_result_count: int
+
 main :: proc() {
 	fmt.println("=== Wren Test Runner ===")
 
@@ -779,22 +783,40 @@ main :: proc() {
 
 	fmt.printf("Found %d test files\n", len(test_files))
 
-	// Run tests
-	results: [dynamic]TestResult
-	for file in test_files {
-		result := run_test(file)
-		append(&results, result)
-	}
-
-	// Report results
+	// Run tests - write results to file incrementally
+	fmt.println("DEBUG: Starting test loop")
 	passed := 0
 	failed := 0
-	for result in results {
+	idx := 0
+
+	// Open results file
+	results_fd := os.open("test_results.txt", .CREATE, .WRITE, 0o644)
+	if results_fd == 0 {
+		fmt.println("Failed to open results file")
+		os.exit(1)
+	}
+
+	for file in test_files {
+		result := run_test(file)
+		idx += 1
+
+		// Write result to file immediately
 		if result.passed {
 			passed += 1
-			fmt.printf("✓ %s\n", result.file)
+			line := fmt.asprintf("✓ %s\n", result.file)
+			os.write(results_fd, line)
+			free(rawptr(line))
 		} else {
 			failed += 1
+			line := fmt.asprintf("✗ %s\n", result.file)
+			os.write(results_fd, line)
+			free(rawptr(line))
+		}
+
+		// Print to stdout too
+		if result.passed {
+			fmt.printf("✓ %s\n", result.file)
+		} else {
 			fmt.printf(" %s\n", result.file)
 			if result.error != "" {
 				fmt.printf("  Error: %s\n", result.error)
@@ -806,8 +828,20 @@ main :: proc() {
 		}
 	}
 
-	fmt.println()
-	fmt.printf("Total:  %d\n", len(results))
+	// Write summary to file
+	summary := fmt.asprintf(
+		"\nTotal: %d\nPassed: %d\nFailed: %d\n",
+		passed + failed,
+		passed,
+		failed,
+	)
+	os.write(results_fd, summary)
+	free(rawptr(summary))
+	os.close(results_fd)
+
+	fmt.println("")
+	fmt.printf("Total:  %d\n", passed + failed)
 	fmt.printf("Passed: %d\n", passed)
 	fmt.printf("Failed: %d\n", failed)
+	os.exit(0)
 }
