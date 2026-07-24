@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Odin
+      uses: odin-lang/setup-odin@v2
+      with:
+        release: dev-2026-07
+
+    - name: Build and run full test suite
+      run: |
+        # Build test runner
+        odin build test_runner -out:build/test_runner
+
+        # Run test runner (Wren's tests + our API tests)
+        ./build/test_runner
+
+        # Build and run integration tests
+        odin build integration_tests/high_level_test.odin -file -out:build/high_level_test
+        ./build/high_level_test
+
+        odin build integration_tests/examples_test.odin -file -out:build/examples_test
+        ./build/examples_test
+
+    - name: Check Odin formatting
+      run: |
+        odin fmt -check wren/ || echo "Formatting issues found (non-blocking)"
