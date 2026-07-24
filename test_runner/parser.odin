@@ -48,7 +48,14 @@ parse_expectations :: proc(content: string) -> TestExpectations {
 
 		// Check for output expectation
 		if idx := strings.index(line, "// expect:"); idx >= 0 {
-			expected := strings.trim_space(line[idx + len("// expect:"):])
+			// Take everything after "// expect:"
+			expected := line[idx + len("// expect:"):]
+			// Strip exactly one leading space if present (separator)
+			if len(expected) > 0 && expected[0] == ' ' {
+				expected = expected[1:]
+			}
+			// Strip trailing whitespace
+			expected = strings.trim_right(expected, " \t")
 			append(&expectations.expected_outputs, expected)
 		}
 	}
