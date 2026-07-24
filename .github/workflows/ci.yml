@@ -20,6 +20,11 @@ jobs:
       with:
         release: dev-2026-07
 
+    - name: Build Wren static library
+      run: |
+        chmod +x build_wren.sh
+        ./build_wren.sh
+
     - name: Build and run full test suite
       run: |
         mkdir -p build
