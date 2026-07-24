@@ -379,4 +379,8 @@ main :: proc() {
 
 ## License
 
-This project vendors Wren under its MIT license. The Odin bindings are provided as-is.
+## License
+
+The Odin bindings in this project are licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+Wren (vendored in `vendor/wren/`) is licensed under the MIT License. See `vendor/wren/LICENSE` for details.
