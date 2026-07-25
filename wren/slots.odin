@@ -28,9 +28,12 @@ set_double :: proc(vm: VM, slot: int, value: f64) {
 	RawSetSlotDouble(vm.raw, c.int(slot), value)
 }
 set_string :: proc(vm: VM, slot: int, value: string) {
-	c_str := strings.clone_to_cstring(value)
-	defer free(rawptr(c_str))
-	RawSetSlotString(vm.raw, c.int(slot), c_str)
+	if len(value) == 0 {
+		RawSetSlotBytes(vm.raw, c.int(slot), cstring(""), 0)
+		return
+	}
+	ptr := raw_data(value)
+	RawSetSlotBytes(vm.raw, c.int(slot), cstring(ptr), c.size_t(len(value)))
 }
 
 get_bool :: proc(vm: VM, slot: int) -> bool {
@@ -42,8 +45,14 @@ get_double :: proc(vm: VM, slot: int) -> f64 {
 }
 
 get_string :: proc(vm: VM, slot: int) -> string {
-	c_str := RawGetSlotString(vm.raw, c.int(slot))
-	return string(c_str)
+	length: c.int = 0
+	ptr := RawGetSlotBytes(vm.raw, c.int(slot), &length)
+	if ptr == nil || length <= 0 {
+		return ""
+	}
+	byte_ptr := cast(^byte)(ptr)
+	bytes := (cast([^]byte)(byte_ptr))[0:int(length)]
+	return string(bytes)
 }
 
 get_bytes :: proc(vm: VM, slot: int) -> []byte {
