@@ -42,17 +42,12 @@ create_list :: proc "c" (vm: ^wren.RawVM) {
         wren.RawSetSlotDouble(vm, 1, f64(i + 1))
         wren.RawInsertInList(vm, 0, -1, 1)
     }
-### String Literals Test Crash
-
-The `vendor/wren/test/language/string/literals.wren` test fails when processing raw strings with certain Unicode patterns and indentation. This appears to be a Wren VM bug related to raw string parsing.
-
-**Reference:** [Wren Issue #1217 - Heap-buffer-overflow in peekChar parsing malformed quotes](https://github.com/wren-lang/wren/issues/1217)
-
-The crash occurs in the Wren VM's string handling code during raw string indentation processing, not in the Odin bindings. All other string tests pass successfully.
-        value := wren.RawGetSlotDouble(vm, 2)
+    for value in values {
+        wren.RawSetSlotDouble(vm, 2, value)
         // Process value
     }
 }
+```
 
 ### High-Level Foreign Methods (Recommended)
 
