@@ -4,9 +4,18 @@ Odin bindings for the Wren scripting language. Provides a high-level API for emb
 
 ## Features
 
-### High-Level API
+### Quick Start
 
-The public API uses only Odin-native types. No `c.int`, `cstring`, `rawptr`, or other FFI types are exposed to callers. All conversions happen internally.
+```odin
+import "wren"
+
+vm := wren.make_vm()
+defer wren.free_vm(&vm)
+
+result := wren.interpret(vm, "main", `System.print("Hello from Wren!")`)
+```
+
+For more control, configure callbacks before creating the VM:
 
 ```odin
 import "wren"
@@ -19,52 +28,29 @@ wren.set_load_module_fn(&config, module_loader)
 vm := wren.new_vm(&config)
 defer wren.free_vm(&vm)
 
-result := wren.interpret(vm, "main", `System.print("Hello from Wren")`)
+result := wren.interpret(vm, "main", `System.print("Hello from Wren!")`)
 ```
 
-### Bidirectional Data Interop
+### Foreign Methods
 
-Pass data between Odin and Wren in both directions:
-
-- Numbers (f64)
-- Strings
-- Booleans
-- Lists
-- Maps
-- Foreign objects (Odin structs <-> Wren classes)
-
-```odin
-// Odin -> Wren: Create a list
-create_list :: proc "c" (vm: ^wren.RawVM) {
-    wren.RawEnsureSlots(vm, 1)
-    wren.RawSetSlotNewList(vm, 0)
-    for i in 0..<5 {
-        wren.RawSetSlotDouble(vm, 1, f64(i + 1))
-        wren.RawInsertInList(vm, 0, -1, 1)
-    }
-    for value in values {
-        wren.RawSetSlotDouble(vm, 2, value)
-        // Process value
-    }
-}
-```
-
-### High-Level Foreign Methods (Recommended)
-
-The high-level API provides a much simpler way to write foreign methods without dealing with slot management:
+Define Odin functions that Wren can call using the high-level `Value` API — no slot management or raw pointers needed:
 
 ```odin
 import "wren"
 
-// Define foreign methods using Value types - no slot management needed!
 add_numbers :: proc(args: []wren.Value) -> wren.Value {
     a := wren.as_num(args[0])
     b := wren.as_num(args[1])
     return wren.num_value(a + b)
 }
 
+concat_strings :: proc(args: []wren.Value) -> wren.Value {
+    a := wren.as_string(args[0])
+    b := wren.as_string(args[1])
+    return wren.string_value(a + b)
+}
+
 create_list :: proc(args: []wren.Value) -> wren.Value {
-    // Use make() to allocate on heap
     items := make([]wren.Value, 5)
     items[0] = wren.num_value(1)
     items[1] = wren.num_value(2)
@@ -74,76 +60,80 @@ create_list :: proc(args: []wren.Value) -> wren.Value {
     return wren.list_value(items)
 }
 
-concat_strings :: proc(args: []wren.Value) -> wren.Value {
-    a := wren.as_string(args[0])
-    b := wren.as_string(args[1])
-    return wren.string_value(a + b)
-}
-
 main :: proc() {
-    config := wren.make_configuration()
-    // ... setup callbacks ...
-    vm := wren.new_vm(&config)
+    vm := wren.make_vm()
     defer wren.free_vm(&vm)
 
-    // Register methods with the high-level API
+    // Register Odin handlers for Wren foreign methods
     wren.register_method(vm, "./math", "Math", "static Math.add(_,_)", add_numbers)
-    wren.register_method(vm, "./interop", "Interop", "static Interop.createList()", create_list)
     wren.register_method(vm, "./strings", "Strings", "static Strings.concat(_,_)", concat_strings)
+    wren.register_method(vm, "./interop", "Interop", "static Interop.createList()", create_list)
 
-    // Run Wren code
+    // Run Wren code that calls the foreign methods
     wren.interpret(vm, "./math", `
-        class Math {
-            foreign static add(a, b)
-        }
+        import "./math" for Math
         System.print(Math.add(10, 20))  // Output: 30
     `)
 }
 ```
 
-**Benefits of the high-level API:**
-- No slot management (`ensure_slots`, `get_slot_*`, `set_slot_*`)
-- No raw VM pointers (`^RawVM`)
-- Type-safe value extraction with `as_num`, `as_string`, `as_list`, etc.
-- Simple value construction with `num_value`, `string_value`, `list_value`, etc.
-- Automatic slot cleanup and memory management
+In Wren, declare the foreign methods:
 
-**Value Types:**
-- `wren.num_value(f64)` - Create a number value
-- `wren.string_value(string)` - Create a string value
-- `wren.bool_value(bool)` - Create a boolean value
-- `wren.list_value([]Value)` - Create a list value
-- `wren.map_value(Map)` - Create a map value
-- `wren.as_num(Value)` - Extract a number
-- `wren.as_string(Value)` - Extract a string
-- `wren.as_bool(Value)` - Extract a boolean
-- `wren.as_list(Value)` - Extract a list
-- `wren.as_map(Value)` - Extract a map
+```wren
+class Math {
+    foreign static add(a, b)
+}
 
-### Foreign Method Binding
+class Strings {
+    foreign static concat(a, b)
+}
 
-Register Odin functions as Wren foreign methods:
-
-```odin
-wren.register_foreign_method(
-    "./my_module",
-    "Math",
-    "static Math.add(_,_)",
-    add_numbers,
-)
+class Interop {
+    foreign static createList()
+}
 ```
 
-### Foreign Class Binding
+Signature format: `"static ClassName.method(_)"` for static methods, `"ClassName.method(_)"` for instance methods, `"ClassName.init new(_)"` for constructors. Each `_` represents one parameter.
 
-Bind Odin structs to Wren classes with allocate/finalize callbacks:
+### Data Types
+
+The `Value` type is a tagged union representing any Wren value. Use constructors to create values and extractors to read them:
+
+**Constructors:**
+- `wren.num_value(f64)` — number
+- `wren.string_value(string)` — string
+- `wren.bool_value(bool)` — boolean
+- `wren.list_value([]Value)` — list
+- `wren.map_value(Map)` — map
+- `wren.foreign_value(rawptr)` — foreign object
+- `wren.nil_value()` — nil
+
+**Extractors** (panic on type mismatch):
+- `wren.as_num(Value) -> f64`
+- `wren.as_string(Value) -> string`
+- `wren.as_bool(Value) -> bool`
+- `wren.as_list(Value) -> []Value`
+- `wren.as_map(Value) -> Map`
+- `wren.as_foreign(Value) -> rawptr`
+
+**Type checks** (return `bool`):
+- `wren.is_num(Value)`, `wren.is_string(Value)`, `wren.is_bool(Value)`, `wren.is_list(Value)`, `wren.is_map(Value)`, `wren.is_foreign(Value)`, `wren.is_nil(Value)`
+
+### Calling Wren from Odin
+
+Use `call_method` to invoke Wren methods and get the result as a `Value`:
 
 ```odin
-wren.register_foreign_class(
-    "./my_module",
-    "Point",
-    point_allocate,
-    point_finalize,
-)
+// Call a static method with arguments
+result, status := wren.call_method(vm, "./math", "Math", "static Math.add(_,_)", wren.Value[2]{
+    wren.num_value(10),
+    wren.num_value(20),
+})
+
+if status == .Ok {
+    n := wren.as_num(result)
+    // n == 30
+}
 ```
 
 ### Module Loading
@@ -160,36 +150,52 @@ module_loader :: proc(vm: wren.VM, name: string) -> wren.LoadModuleResult {
 wren.set_load_module_fn(&config, module_loader)
 ```
 
-### wrenCall() API
+### Foreign Classes
 
-Call Wren methods from Odin code using handles:
+Bind Odin structs to Wren classes with allocate/finalize callbacks. This uses the low-level slot API for the allocate function:
 
 ```odin
-// Get a class
-wren.ensure_slots(vm, 1)
-wren.get_variable(vm, "main", "MyClass", 0)
-class_handle := wren.get_slot_handle(vm, 0)
+import "wren"
+import "core:c"
 
-// Create a call handle
-method_handle := wren.make_call_handle(vm, "doSomething(_,_)")
+Point2D :: struct {
+    x: f64,
+    y: f64,
+}
 
-// Set up arguments
-wren.ensure_slots(vm, 3)
-wren.set_slot_handle(vm, 0, class_handle)
-wren.set_double(vm, 1, 42.0)
-wren.set_string(vm, 2, "hello")
+point_allocate :: proc "c" (vm: ^wren.RawVM) {
+    data := wren.RawSetSlotNewForeign(vm, 0, 0, c.size_t(size_of(Point2D)))
+    point := cast(^Point2D)(data)
+    point.x = 0
+    point.y = 0
+}
 
-// Call the method
-result := wren.call(vm, method_handle)
+point_finalize :: proc "c" (data: rawptr) {
+    // Cleanup if needed
+}
 
-// Clean up
-wren.release_handle(&class_handle)
-wren.release_handle(&method_handle)
+main :: proc() {
+    vm := wren.make_vm()
+    defer wren.free_vm(&vm)
+
+    wren.register_foreign_class(
+        "./geometry",
+        "Point",
+        point_allocate,
+        point_finalize,
+    )
+
+    wren.interpret(vm, "./geometry", `
+        import "./geometry" for Point
+        var p = Point.new()
+        System.print(p)
+    `)
+}
 ```
 
-### Per-Test VM Configuration
+### VM Configuration
 
-Create isolated VMs with custom callbacks for testing:
+Create isolated VMs with custom callbacks for testing or multi-VM setups:
 
 ```odin
 config := wren.make_configuration()
@@ -203,11 +209,26 @@ defer wren.free_vm(&test_vm)
 result := wren.interpret(test_vm, "main", source)
 ```
 
+### Low-Level API
+
+The high-level API covers most use cases. For advanced scenarios — custom memory management, direct handle manipulation, or performance-critical paths — the low-level slot-based API is available. It mirrors Wren's C API directly:
+
+```odin
+// Low-level: manual slot management
+wren.ensure_slots(vm, 3)
+wren.set_slot_double(vm, 1, 42.0)
+wren.set_slot_string(vm, 2, "hello")
+```
+
+See `wren/slots.odin` and `wren/vm.odin` for the full low-level API.
+
 ## Limitations
 
 ### String Literals Test Crash
 
 The `vendor/wren/test/language/string/literals.wren` test crashes when processing raw strings with certain Unicode patterns. This is a Wren VM bug, not an Odin binding issue. The crash occurs in the Wren VM's string handling code, not in the bindings.
+
+**Reference:** [Wren Issue #1217 - Heap-buffer-overflow in peekChar parsing malformed quotes](https://github.com/wren-lang/wren/issues/1217)
 
 ### Foreign Class Constructor Signatures
 
@@ -215,7 +236,7 @@ Foreign class constructors require specific signature formats. The trampoline bu
 
 ### ARM64 Stack Alignment
 
-The test runner may crash during cleanup on ARM64 systems. This is a cosmetic issue—all tests execute successfully and results are printed before the crash. The issue appears to be in the Odin runtime's stack alignment during VM cleanup.
+The test runner may crash during cleanup on ARM64 systems. This is a cosmetic issue — all tests execute successfully and results are printed before the crash. The issue appears to be in the Odin runtime's stack alignment during VM cleanup.
 
 ## Building
 
@@ -266,17 +287,17 @@ Failed: 1
 ```
 wren-odin/
 ├── wren/                    # Odin bindings package
-│   ├── wren_raw.odin       # Raw C API bindings
-│   ├── trampolines.odin    # C callback bridges
-│   ├── slots.odin          # Slot operations
-│   ├── vm.odin             # VM lifecycle and wrenCall()
+│   ├── wren_raw.odin       # Raw C API bindings (internal)
+│   ├── trampolines.odin    # C callback bridges (internal)
+│   ├── slots.odin          # Low-level slot operations
+│   ├── vm.odin             # VM lifecycle
 │   ├── config.odin         # Configuration helpers
 │   ├── types.odin          # Public types
 │   ├── value.odin          # Value type and conversion functions
 │   └── high_level.odin     # High-level method registration API
 ├── test_runner/             # Test runner
 │   ├── main.odin           # API test implementations
-│   ├── runner.odin         # Test execution and wrenCall() tests
+│   ├── runner.odin         # Test execution
 │   ├── parser.odin         # Comment protocol parser
 │   └── file_discovery.odin # Test file discovery
 ├── integration_tests/       # Integration tests
@@ -286,6 +307,7 @@ wren-odin/
 │   ├── bool_null_test.odin # Boolean/null handling
 │   ├── complex_data_test.odin # Complex data structures
 │   └── high_level_test.odin # High-level API demonstration
+├── examples/                # Game-dev Wren examples
 ├── vendor/wren/             # Wren source (git submodule)
 ├── build_wren.sh           # Wren build script
 └── TODO.md                 # Project status
@@ -358,7 +380,7 @@ main :: proc() {
 }
 ```
 
-### Foreign Methods
+### High-Level Foreign Methods
 
 ```odin
 package main
@@ -366,27 +388,21 @@ package main
 import "wren"
 import "core:fmt"
 
-add_numbers :: proc "c" (vm: ^wren.RawVM) {
-    a := wren.RawGetSlotDouble(vm, 1)
-    b := wren.RawGetSlotDouble(vm, 2)
-    wren.RawSetSlotDouble(vm, 0, a + b)
+add_numbers :: proc(args: []wren.Value) -> wren.Value {
+    a := wren.as_num(args[0])
+    b := wren.as_num(args[1])
+    return wren.num_value(a + b)
 }
 
 main :: proc() {
-    config := wren.make_configuration()
-    vm := wren.new_vm(&config)
+    vm := wren.make_vm()
     defer wren.free_vm(&vm)
 
-    wren.register_foreign_method(
-        "./math",
-        "Math",
-        "static Math.add(_,_)",
-        add_numbers,
-    )
+    wren.register_method(vm, "./math", "Math", "static Math.add(_,_)", add_numbers)
 
     source := `
         import "./math" for Math
-        System.print(Math.add(10, 20))
+        System.print(Math.add(10, 20))  // Output: 30
     `
 
     wren.interpret(vm, "main", source)
@@ -418,8 +434,7 @@ point_finalize :: proc "c" (data: rawptr) {
 }
 
 main :: proc() {
-    config := wren.make_configuration()
-    vm := wren.new_vm(&config)
+    vm := wren.make_vm()
     defer wren.free_vm(&vm)
 
     wren.register_foreign_class(
@@ -444,8 +459,6 @@ main :: proc() {
 - [Wren Documentation](http://wren.io/)
 - [Wren C API](vendor/wren/src/include/wren.h)
 - [Odin Documentation](https://odin-lang.org/docs/)
-
-## License
 
 ## License
 
