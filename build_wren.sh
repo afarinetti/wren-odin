@@ -7,6 +7,15 @@ cd "$SCRIPT_DIR"
 
 echo "=== Building Wren static library ==="
 
+echo "Applying local patches to Wren source..."
+if [ -f patches/wren_compiler_readRawString.patch ]; then
+  cd vendor/wren
+  git apply --check ../patches/wren_compiler_readRawString.patch 2>/dev/null || echo "  Patch already applied"
+  git apply ../patches/wren_compiler_readRawString.patch 2>/dev/null || true
+  cd "$SCRIPT_DIR"
+  echo "  -> Applied wren_compiler_readRawString.patch"
+fi
+
 # Step 1: Generate amalgamation
 echo "Generating amalgamated source..."
 mkdir -p vendor/wren/build

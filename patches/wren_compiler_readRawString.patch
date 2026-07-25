@@ -1,0 +1,25 @@
+diff --git a/src/vm/wren_compiler.c b/src/vm/wren_compiler.c
+index 597e3e75..11899227 100644
+--- a/src/vm/wren_compiler.c
++++ b/src/vm/wren_compiler.c
+@@ -940,13 +940,16 @@ static void readRawString(Parser* parser)
+       parser->currentChar--;
+       break;
+     }
+- 
++
+     wrenByteBufferWrite(parser->vm, &string, c);
+   }
+ 
+-  //consume the second and third "
+-  nextChar(parser);
+-  nextChar(parser);
++  // Only consume closing quotes if we actually found them
++  if (peekChar(parser) == '"' && peekNextChar(parser) == '"')
++  {
++    nextChar(parser);
++    nextChar(parser);
++  }
+ 
+   int offset = 0;
+   int count = string.count;
